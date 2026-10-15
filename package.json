@@ -7,10 +7,12 @@
     "dev": "nuxt dev --dotenv .env.local",
     "build": "nuxt build",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "deploy": "nuxt build && wrangler deploy"
   },
   "dependencies": {
     "@mdi/font": "latest",
+    "@neondatabase/serverless": "^1.2.0",
     "@scalar/nuxt": "^0.6.80",
     "nuxt": "^4",
     "pg": "^8",
@@ -20,10 +22,12 @@
   },
   "devDependencies": {
     "@types/node": "^22",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4"
   },
   "allowScripts": {
     "esbuild": true,
-    "vue-demi": true
+    "vue-demi": true,
+    "workerd": true
   }
 }

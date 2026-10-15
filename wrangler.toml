@@ -1,0 +1,10 @@
+name = "api-ehis-gay"
+main = "./.output/server/index.mjs"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+[vars]
+STORAGE = "postgres"

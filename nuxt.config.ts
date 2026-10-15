@@ -70,6 +70,7 @@ export default defineNuxtConfig({
   },
   scalar: scalarConfig,
   nitro: {
+    preset: "cloudflare_module",
     prerender: {
       routes: ["/"]
     }

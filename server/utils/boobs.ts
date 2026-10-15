@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { resolveSqlBackend } from "./pgBackend";
 
 export const CONFIG_KEYS = [
   "bust_size",
@@ -99,30 +100,6 @@ function openSqlite(path: string) {
   return db;
 }
 
-const pools = new Map<string, any>();
-const pgReady = new Set<string>();
-
-function pgPool(url: string) {
-  let pool = pools.get(url);
-  if (!pool) {
-    const { Pool } = require_("pg") as { Pool: new (cfg: any) => any };
-    pool = new Pool({
-      connectionString: url,
-      ssl: /localhost|127\.0\.0\.1/.test(url) ? undefined : { rejectUnauthorized: false }
-    });
-    pools.set(url, pool);
-  }
-  return pool;
-}
-
-async function pgInit(url: string) {
-  if (pgReady.has(url)) return;
-  await pgPool(url).query(
-    "CREATE TABLE IF NOT EXISTS boobs (uuid TEXT PRIMARY KEY, token_hash TEXT NOT NULL, hash TEXT NOT NULL, config JSONB NOT NULL, updated_at TEXT NOT NULL)"
-  );
-  pgReady.add(url);
-}
-
 function toEntry(row: any): StoredEntry {
   return {
     tokenHash: row.token_hash,
@@ -147,12 +124,10 @@ async function readEntryFrom(target: Target, uuid: string): Promise<StoredEntry 
       return row ? toEntry(row) : null;
     }
 
-    await pgInit(target.url!);
-    const res = await pgPool(target.url!).query(
-      "SELECT token_hash, hash, config, updated_at FROM boobs WHERE uuid = $1",
-      [uuid]
-    );
-    return res.rows[0] ? toEntry(res.rows[0]) : null;
+    const backend = await resolveSqlBackend(target.url!);
+    if (!backend) return null;
+    const row = await backend.get(uuid);
+    return row ? toEntry(row) : null;
   } catch {
     return null;
   }
@@ -174,10 +149,11 @@ async function readAllFrom(target: Target): Promise<Store> {
       return store;
     }
 
-    await pgInit(target.url!);
-    const res = await pgPool(target.url!).query("SELECT uuid, token_hash, hash, config, updated_at FROM boobs");
+    const backend = await resolveSqlBackend(target.url!);
+    if (!backend) return {};
+    const rows = await backend.all();
     const store: Store = {};
-    for (const row of res.rows) store[row.uuid] = toEntry(row);
+    for (const row of rows) store[row.uuid] = toEntry(row);
     return store;
   } catch {
     return {};
@@ -203,11 +179,15 @@ async function writeEntryTo(target: Target, uuid: string, entry: StoredEntry): P
       return;
     }
 
-    await pgInit(target.url!);
-    await pgPool(target.url!).query(
-      "INSERT INTO boobs (uuid, token_hash, hash, config, updated_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (uuid) DO UPDATE SET token_hash = EXCLUDED.token_hash, hash = EXCLUDED.hash, config = EXCLUDED.config, updated_at = EXCLUDED.updated_at",
-      [uuid, entry.tokenHash, entry.hash, JSON.stringify(entry.config), entry.updatedAt]
-    );
+    const backend = await resolveSqlBackend(target.url!);
+    if (!backend) return;
+    await backend.put({
+      uuid,
+      token_hash: entry.tokenHash,
+      hash: entry.hash,
+      config: entry.config,
+      updated_at: entry.updatedAt
+    });
   } catch {}
 }
 
@@ -229,8 +209,9 @@ async function removeEntryFrom(target: Target, uuid: string): Promise<void> {
       return;
     }
 
-    await pgInit(target.url!);
-    await pgPool(target.url!).query("DELETE FROM boobs WHERE uuid = $1", [uuid]);
+    const backend = await resolveSqlBackend(target.url!);
+    if (!backend) return;
+    await backend.remove(uuid);
   } catch {}
 }
 
