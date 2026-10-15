@@ -105,24 +105,30 @@ paths:
     delete:
       tags: [boobs]
       summary: opt out of boob sync
-      description: deletes your stored config, also available via the web page at /opt-out/boobs.
+      description: |
+        deletes your stored config, also available via the web page at /opt-out/boobs.
+        pass the uuid as a query parameter and the token as a bearer token.
+        no request body is used, some proxies drop bodies on DELETE.
       operationId: deleteBoobs
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [uuid, token]
-              properties:
-                uuid:
-                  type: string
-                  format: uuid
-                token:
-                  type: string
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: token
+          in: query
+          description: alternative to the bearer header, for when a url is easier
+          schema:
+            type: string
       responses:
         "200":
           description: deleted (or never existed)
+        "400":
+          description: missing or invalid uuid
         "401":
           description: missing or invalid token
   /v1/boobs/multiple:

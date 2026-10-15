@@ -1,7 +1,10 @@
 export default defineEventHandler(async (event) => {
-  const body = await readBody(event).catch(() => null);
-  const uuid = body?.uuid;
-  const token = typeof body?.token === "string" ? body.token : "";
+  const query = getQuery(event);
+
+  const uuid = typeof query.uuid === "string" ? query.uuid : "";
+  const token =
+    getBearerToken(getHeader(event, "authorization")) ??
+    (typeof query.token === "string" ? query.token : null);
 
   if (!isValidUuid(uuid)) throw invalidUuidResponse(event);
   if (!token) throw unauthorizedResponse();

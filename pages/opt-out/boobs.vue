@@ -17,9 +17,9 @@ async function optOut() {
   errorMessage.value = "";
 
   try {
-    await $fetch("/v1/boobs", {
+    await $fetch(`/v1/boobs?uuid=${encodeURIComponent(uuid.value)}`, {
       method: "DELETE",
-      body: { uuid: uuid.value, token: token.value }
+      headers: { Authorization: `Bearer ${token.value}` }
     });
     state.value = "done";
   } catch (e: any) {
