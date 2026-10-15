@@ -1,0 +1,22 @@
+.v-application {
+  font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif !important;
+}
+
+.v-application .v-btn {
+  border-radius: 4px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.0892857143em !important;
+  font-weight: 500 !important;
+}
+
+.v-application .v-btn--variant-elevated {
+  box-shadow: 0 3px 1px -2px rgba(0, 0, 0, 0.2), 0 2px 2px 0 rgba(0, 0, 0, 0.14),
+    0 1px 5px 0 rgba(0, 0, 0, 0.12) !important;
+}
+
+::selection { background: #BB86FC33; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #17181c; }
+::-webkit-scrollbar-thumb { background: #2a2c33; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3d47; }

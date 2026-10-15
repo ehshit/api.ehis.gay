@@ -1,0 +1,29 @@
+{
+  "name": "api.ehis.gay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --dotenv .env.local",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@mdi/font": "latest",
+    "@scalar/nuxt": "^0.6.80",
+    "nuxt": "^4",
+    "pg": "^8",
+    "vuetify": "^3",
+    "vuetify-nuxt-module": "latest",
+    "yaml": "^2"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "vue-demi": true
+  }
+}
