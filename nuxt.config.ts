@@ -75,7 +75,7 @@ export default defineNuxtConfig({
       ? { serveStatic: "inline" as const, noExternals: true, inlineDynamicImports: true }
       : {}),
     prerender: {
-      routes: ["/"]
+      routes: process.env.BUILD_EXE ? [] : ["/"]
     }
   },
   app: {
