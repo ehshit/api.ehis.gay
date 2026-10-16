@@ -30,7 +30,7 @@ jobs:
       - name: install deps
         run: bun install
 
-      - name: build nuxt (exe mode)
+      - name: build nuxt
         run: bun run -b build
         env:
           BUILD_EXE: "1"
