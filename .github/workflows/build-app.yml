@@ -112,7 +112,6 @@ jobs:
                       "or if this still not opening whitelist it from the quaratine on the terminal with:*\n\n"
                       + "\n".join(cmds)
                   )
-              section += "\n\nconfig.toml generates itself next to the binary on first run :3"
               out.append(section)
 
           out.append("## Docker\n\n```\ndocker pull ghcr.io/" + repo.lower() + ":latest\n```")
