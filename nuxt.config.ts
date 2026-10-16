@@ -72,7 +72,12 @@ export default defineNuxtConfig({
   nitro: {
     preset: process.env.BUILD_EXE ? "bun" : process.env.NITRO_PRESET || "cloudflare_module",
     ...(process.env.BUILD_EXE
-      ? { serveStatic: "inline" as const, noExternals: true, inlineDynamicImports: true }
+      ? {
+          serveStatic: "inline" as const,
+          noExternals: true,
+          inlineDynamicImports: true,
+          alias: { "jsonc-parser": "jsonc-parser/lib/esm/main.js" }
+        }
       : {}),
     prerender: {
       routes: process.env.BUILD_EXE ? [] : ["/"]
