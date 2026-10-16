@@ -76,7 +76,7 @@ export default defineNuxtConfig({
           serveStatic: "inline" as const,
           noExternals: true,
           inlineDynamicImports: true,
-          alias: { "jsonc-parser": "jsonc-parser/lib/esm/main.js" }
+          rollupConfig: { external: ["jsonc-parser"] }
         }
       : {}),
     prerender: {
