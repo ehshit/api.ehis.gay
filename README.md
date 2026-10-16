@@ -34,6 +34,8 @@ MacOS is NOT signed, if MacOS doesn't let you open, allow it from System Setting
 
 ## From source
 
+needs [Node.js](https://nodejs.org/en/download)
+
 ```
 git clone https://github.com/ehshit/api.ehis.gay.git
 cd api.ehis.gay
