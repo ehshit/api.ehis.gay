@@ -1,0 +1,25 @@
+# Reboot the app after you edit the config file
+
+[branding]
+# what this app is named as?
+name = "api.ehis.gay"
+# Description for the Scalar documentation/OpenAPI
+description = "API for ehis.gay with stuff!"
+# server url shown on the Scalar docs
+server_url = ""
+
+[http]
+# What is its user-agent when making requests
+# leave empty to fall back to branding.name
+user_agent = ""
+
+[storage]
+# leave driver empty ("") to use environment defaults
+# options: json | sqlite | postgres
+driver = ""
+# json: directory that holds boobs.json (default to the data folder)
+# sqlite: path to a .db file (default to: data/boobs.db)
+# relative paths are resolved next to this config
+path = "data"
+# postgres connection (when driver is set to "postgres")
+database_url = ""

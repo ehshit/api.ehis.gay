@@ -70,7 +70,9 @@ export default defineNuxtConfig({
   },
   scalar: scalarConfig,
   nitro: {
-    preset: "cloudflare_module",
+    preset: process.env.BUILD_EXE ? "bun" : process.env.NITRO_PRESET || "cloudflare_module",
+    ...(process.env.BUILD_EXE ? { serveStatic: "inline" as const } : {}),
+    serverAssets: [{ baseName: "openapi", dir: "./server/assets" }],
     prerender: {
       routes: ["/"]
     }

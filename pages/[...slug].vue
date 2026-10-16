@@ -21,6 +21,10 @@ const msg = ref("");
 onMounted(() => {
   msg.value = messages[Math.floor(Math.random() * messages.length)];
 });
+
+const { data: branding } = await useBranding();
+
+useHead({ title: () => branding.value.name });
 </script>
 
 <template>

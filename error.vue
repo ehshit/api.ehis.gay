@@ -386,9 +386,15 @@ const serverMessages = [
 
 const funny = ref("");
 const boom = ref("");
+const brandName = ref("api.ehis.gay");
 onMounted(() => {
   funny.value = notFoundMessages[Math.floor(Math.random() * notFoundMessages.length)];
   boom.value = serverMessages[Math.floor(Math.random() * serverMessages.length)];
+  $fetch<{ name: string }>("/branding")
+    .then((data) => {
+      if (data?.name) brandName.value = data.name;
+    })
+    .catch(() => {});
 });
 
 const info = computed(() => {
@@ -438,7 +444,7 @@ const details = computed(() => {
 
 const retryable = computed(() => status.value !== 404);
 
-useHead({ title: `${status.value} · api.ehis.gay` });
+useHead({ title: () => `${status.value} · ${brandName.value}` });
 
 function goHome() {
   clearError({ redirect: "/" });

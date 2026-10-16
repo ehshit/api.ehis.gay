@@ -16,6 +16,7 @@
     "@scalar/nuxt": "^0.6.80",
     "nuxt": "^4",
     "pg": "^8",
+    "smol-toml": "^1.9.1",
     "vuetify": "^3",
     "vuetify-nuxt-module": "latest",
     "yaml": "^2"

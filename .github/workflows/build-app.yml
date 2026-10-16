@@ -1,0 +1,170 @@
+name: build app
+
+"on":
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: api-ehis-gay-windows-x64.exe
+          - os: ubuntu-latest
+            artifact: api-ehis-gay-linux-x64
+          - os: macos-latest
+            artifact: api-ehis-gay-macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: install deps
+        run: bun install
+
+      - name: build nuxt (exe mode)
+        run: bun run -b build
+        env:
+          BUILD_EXE: "1"
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: compile the binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          bun build .output/server/index.mjs --compile \
+            --outfile "dist/${{ matrix.artifact }}"
+
+      - name: compile the macos intel twin
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          bun build .output/server/index.mjs --compile \
+            --target bun-darwin-x64 \
+            --outfile dist/api-ehis-gay-macos-x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe-${{ runner.os }}-${{ runner.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exe-*
+          path: downloads
+          merge-multiple: true
+
+      - name: Write the release notes
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          cat > mkrel.py <<'PY'
+          import os, sys, subprocess
+
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          tag = sys.argv[1]
+          base = "https://github.com/" + repo + "/releases/download/" + tag + "/"
+
+          try:
+              have = set(os.listdir("downloads"))
+          except OSError:
+              have = set()
+
+          def link(name, label=None):
+              return "[" + (label or name) + "](" + base + name + ")"
+
+          archives = [
+              ("Windows x64", "api-ehis-gay-windows-x64.exe"),
+              ("Linux x64", "api-ehis-gay-linux-x64"),
+              ("macOS ARM64 (Apple Silicon)", "api-ehis-gay-macos-arm64"),
+              ("macOS Intel", "api-ehis-gay-macos-x64"),
+          ]
+
+          rows = ["| System | Download |", "| --- | --- |"]
+          for label, name in archives:
+              if name in have:
+                  rows.append("| " + label + " | " + link(name, "Download") + " |")
+
+          out = []
+          if len(rows) > 2:
+              section = "## Downloads\n\n" + "\n".join(rows)
+              macs = [n for label, n in archives if n in have and n.startswith("api-ehis-gay-macos")]
+              if macs:
+                  cmds = []
+                  for n in sorted(macs):
+                      cpu = "Apple Silicon" if "arm64" in n else "Intel"
+                      cmds.append("- `xattr -dr com.apple.quarantine " + n + "` (" + cpu + ")")
+                  section += (
+                      "\n\n*MacOS is NOT signed, if MacOS doesn't let you open, allow it from System Settings --> Privacy & Security, "
+                      "or if this still not opening whitelist it from the quaratine on the terminal with:*\n\n"
+                      + "\n".join(cmds)
+                  )
+              section += "\n\nconfig.toml generates itself next to the binary on first run :3"
+              out.append(section)
+
+          out.append("## Docker\n\n```\ndocker pull ghcr.io/" + repo.lower() + ":latest\n```")
+
+          commits = []
+          try:
+              prev = subprocess.run(
+                  ["git", "describe", "--tags", "--abbrev=0", "HEAD~1"],
+                  capture_output=True, text=True, check=False,
+              ).stdout.strip()
+              rng = prev + "..HEAD" if prev else "-15"
+              raw = subprocess.run(
+                  ["git", "log", "--pretty=%h %s", rng],
+                  capture_output=True, text=True, check=False,
+              ).stdout
+              commits = [l for l in raw.splitlines() if l.strip()]
+          except Exception:
+              pass
+
+          if not commits:
+              raw = subprocess.run(
+                  ["git", "log", "--pretty=%h %s", "-15"],
+                  capture_output=True, text=True, check=False,
+              ).stdout
+              commits = [l for l in raw.splitlines() if l.strip()]
+
+          out.append("## Recent Commits")
+          out.extend("- " + c for c in commits)
+          print("\n".join(out))
+          PY
+          python3 mkrel.py "${{ github.ref_name }}" > RELEASE_BODY.md
+          rm -f mkrel.py
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes-file RELEASE_BODY.md
+            gh release upload "$tag" downloads/* --clobber
+          else
+            gh release create "$tag" downloads/* \
+              --title "$tag" \
+              --generate-notes=false \
+              --notes-file RELEASE_BODY.md
+          fi
+          gh release view "$tag"

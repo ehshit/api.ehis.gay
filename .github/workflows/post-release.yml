@@ -1,0 +1,65 @@
+name: post-release
+
+"on":
+  workflow_run:
+    workflows: ["build app"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: was this a tag build?
+        id: gate
+        shell: bash
+        run: |
+          sha="${{ github.event.workflow_run.head_sha }}"
+          tag="$(git tag --points-at "$sha" | grep '^v' | head -n1)"
+          if [ -z "$tag" ]; then
+            echo "no v* tag at $sha, not a release build, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          full="${tag#v}"
+          major="${full%%.*}"
+          rest="${full#*.}"
+          minor="${rest%%.*}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "minor=${major}.${minor}" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "release build: $tag"
+
+      - uses: docker/login-action@v3
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        if: steps.gate.outputs.skip == 'false'
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.gate.outputs.tag }}
+            type=raw,value=${{ steps.gate.outputs.minor }}
+
+      - uses: docker/build-push-action@v6
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

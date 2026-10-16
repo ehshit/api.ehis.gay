@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { getUserAgent } from "./appconfig";
 
 const OWNER = "microsoft";
 const REPO = "winget-pkgs";
@@ -29,7 +30,7 @@ function cacheSet(key: string, data: any) {
 
 function ghHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
-    "User-Agent": "api.ehis.gay",
+    "User-Agent": getUserAgent(),
     Accept: "application/vnd.github+json"
   };
   if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
@@ -44,7 +45,7 @@ async function ghFetch(path: string, asText = false) {
   const isApi = url.startsWith(API);
   const headers: Record<string, string> = isApi
     ? ghHeaders()
-    : { "User-Agent": "api.ehis.gay", Accept: "text/plain, application/yaml, */*" };
+    : { "User-Agent": getUserAgent(), Accept: "text/plain, application/yaml, */*" };
   if (!isApi && process.env.GITHUB_TOKEN && url.includes("github")) {
     headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   }

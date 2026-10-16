@@ -31,8 +31,10 @@ async function optOut() {
   }
 }
 
+const { data: branding } = await useBranding();
+
 useHead({
-  title: "boobs opt-out - api.ehis.gay"
+  title: () => `boobs opt-out - ${branding.value.name}`
 });
 </script>
 
@@ -51,7 +53,7 @@ useHead({
     <template v-else>
       <p class="text-body-1 mb-1">boobs opt-out</p>
       <p class="text-body-2 text-medium-emphasis mb-5">
-        this deletes your stored sync config from api.ehis.gay and stops the mod from uploading
+        this deletes your stored sync config from {{ branding.name }} and stops the mod from uploading
         again until you re-register.
       </p>
 
