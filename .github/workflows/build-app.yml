@@ -21,6 +21,8 @@ jobs:
             artifact: api-ehis-gay-linux-x64
           - os: macos-latest
             artifact: api-ehis-gay-macos-arm64
+          - os: macos-15-intel
+            artifact: api-ehis-gay-macos-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -42,14 +44,6 @@ jobs:
           mkdir -p dist
           bun build .output/server/index.mjs --compile \
             --outfile "dist/${{ matrix.artifact }}"
-
-      - name: compile the macos intel twin
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          bun build .output/server/index.mjs --compile \
-            --target bun-darwin-x64 \
-            --outfile dist/api-ehis-gay-macos-x64
 
       - uses: actions/upload-artifact@v4
         with:
