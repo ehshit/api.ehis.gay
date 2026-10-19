@@ -141,6 +141,24 @@ jobs:
                   rows.append("| " + label + " | " + link(name, "Download") + " |")
 
           out = []
+
+          try:
+              import tomllib
+              with open("changelog.toml", "rb") as f:
+                  data = tomllib.load(f)
+              for date in sorted(data, reverse=True)[:1]:
+                  blocks = data[date]
+                  if isinstance(blocks, dict):
+                      blocks = [blocks]
+                  for block in blocks:
+                      text = block.get("changelogtext", "").strip()
+                      if text:
+                          out.append("**" + date + "**\n\n" + text)
+          except FileNotFoundError:
+              print("no changelog.toml, publishing without one", file=sys.stderr)
+          except Exception as e:
+              print("could not read changelog.toml: " + str(e), file=sys.stderr)
+
           if len(rows) > 2:
               section = "## Downloads\n\n" + "\n".join(rows)
               macs = [n for label, n in archives if n in have and n.startswith("api-ehis-gay-macos")]
@@ -157,20 +175,6 @@ jobs:
               out.append(section)
 
           out.append("## Docker\n\n```\ndocker pull ghcr.io/" + repo.lower() + ":latest\n```")
-
-          try:
-              import tomllib
-              with open("changelog.toml", "rb") as f:
-                  data = tomllib.load(f)
-              for date in sorted(data, reverse=True)[:1]:
-                  for block in data[date]:
-                      text = block.get("changelogtext", "").strip()
-                      if text:
-                          out.append("**" + date + "**\n\n" + text)
-          except FileNotFoundError:
-              print("no changelog.toml, publishing without one", file=sys.stderr)
-          except Exception as e:
-              print("could not read changelog.toml: " + str(e), file=sys.stderr)
 
           commits = []
           try:
