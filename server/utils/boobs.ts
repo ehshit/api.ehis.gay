@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { resolveSqlBackend } from "./pgBackend";
+import { loadAppConfig } from "./appconfig";
+import { isOfflineUuid } from "./mojang";
 
 export const CONFIG_KEYS = [
   "bust_size",
@@ -40,9 +42,9 @@ export function isValidUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
 }
 
-export function targets(): Target[] {
-  const raw = [process.env.STORAGE, process.env.DATABASE_URL]
-    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+function parseTargets(entries: string[]): Target[] {
+  const raw = entries
+    .filter((v) => typeof v === "string" && v.trim().length > 0)
     .join(",")
     .split(",")
     .map((s) => s.trim().replace(/^["']+|["']+$/g, "").trim())
@@ -75,11 +77,36 @@ export function targets(): Target[] {
       continue;
     }
 
-    push({ kind: "json", label: `json:${jsonPath()}` });
+    const file = lower === "json" ? jsonPath() : lower.endsWith(".json") ? entry : join(entry, "boobs.json");
+    push({ kind: "json", label: `json:${file}`, path: file });
   }
 
-  if (out.length === 0) push({ kind: "json", label: `json:${jsonPath()}` });
+  if (out.length === 0) push({ kind: "json", label: `json:${jsonPath()}`, path: jsonPath() });
   return out;
+}
+
+export function mainTargets(): Target[] {
+  return parseTargets([process.env.STORAGE ?? "", process.env.DATABASE_URL ?? ""]);
+}
+
+export function targets(): Target[] {
+  return mainTargets();
+}
+
+export function offlineTargets(): Target[] {
+  const config = loadAppConfig();
+  if (!config.boobs.separateOffline) return [];
+  const value = (config.boobs.offlineDatabase || process.env.DATABASE_OFFLINE || "").trim();
+  if (!value) return [];
+  return parseTargets([value]);
+}
+
+export function targetsFor(uuid: string): Target[] {
+  if (isOfflineUuid(uuid)) {
+    const offline = offlineTargets();
+    if (offline.length > 0) return offline;
+  }
+  return mainTargets();
 }
 
 function dataDir(): string {
@@ -112,8 +139,8 @@ function toEntry(row: any): StoredEntry {
 async function readEntryFrom(target: Target, uuid: string): Promise<StoredEntry | null> {
   try {
     if (target.kind === "json") {
-      if (!existsSync(jsonPath())) return null;
-      const store = JSON.parse(readFileSync(jsonPath(), "utf8")) as Store;
+      if (!existsSync(target.path!)) return null;
+      const store = JSON.parse(readFileSync(target.path!, "utf8")) as Store;
       return store[uuid] ?? null;
     }
 
@@ -136,8 +163,8 @@ async function readEntryFrom(target: Target, uuid: string): Promise<StoredEntry 
 async function readAllFrom(target: Target): Promise<Store> {
   try {
     if (target.kind === "json") {
-      if (!existsSync(jsonPath())) return {};
-      return JSON.parse(readFileSync(jsonPath(), "utf8")) as Store;
+      if (!existsSync(target.path!)) return {};
+      return JSON.parse(readFileSync(target.path!, "utf8")) as Store;
     }
 
     if (target.kind === "sqlite") {
@@ -165,8 +192,8 @@ async function writeEntryTo(target: Target, uuid: string, entry: StoredEntry): P
     if (target.kind === "json") {
       const store = await readAllFrom(target);
       store[uuid] = entry;
-      mkdirSync(dataDir(), { recursive: true });
-      writeFileSync(jsonPath(), JSON.stringify(store, null, 2), "utf8");
+      mkdirSync(dirname(target.path!), { recursive: true });
+      writeFileSync(target.path!, JSON.stringify(store, null, 2), "utf8");
       return;
     }
 
@@ -197,8 +224,8 @@ async function removeEntryFrom(target: Target, uuid: string): Promise<void> {
       const store = await readAllFrom(target);
       if (!(uuid in store)) return;
       delete store[uuid];
-      mkdirSync(dataDir(), { recursive: true });
-      writeFileSync(jsonPath(), JSON.stringify(store, null, 2), "utf8");
+      mkdirSync(dirname(target.path!), { recursive: true });
+      writeFileSync(target.path!, JSON.stringify(store, null, 2), "utf8");
       return;
     }
 
@@ -216,7 +243,7 @@ async function removeEntryFrom(target: Target, uuid: string): Promise<void> {
 }
 
 export async function readEntry(uuid: string): Promise<StoredEntry | null> {
-  for (const target of targets()) {
+  for (const target of targetsFor(uuid)) {
     const entry = await readEntryFrom(target, uuid);
     if (entry) return entry;
   }
@@ -225,7 +252,7 @@ export async function readEntry(uuid: string): Promise<StoredEntry | null> {
 
 export async function readAll(): Promise<Store> {
   const merged: Store = {};
-  for (const target of targets()) {
+  for (const target of [...mainTargets(), ...offlineTargets()]) {
     const part = await readAllFrom(target);
     for (const [uuid, entry] of Object.entries(part)) {
       if (!(uuid in merged)) merged[uuid] = entry;
@@ -252,7 +279,7 @@ export async function getManyConfigs(uuids: string[]): Promise<Record<string, Pa
 export async function storeStats() {
   const all = await readAll();
   return {
-    storage: targets().map((t) => t.label),
+    storage: [...mainTargets(), ...offlineTargets()].map((t) => t.label),
     entries: Object.keys(all).length
   };
 }
@@ -300,7 +327,7 @@ export async function registerUuid(uuid: string): Promise<{ token: string; entry
     config: existing?.config ?? {},
     updatedAt: new Date().toISOString()
   };
-  for (const target of targets()) await writeEntryTo(target, uuid, entry);
+  for (const target of targetsFor(uuid)) await writeEntryTo(target, uuid, entry);
   return { token, entry };
 }
 
@@ -315,7 +342,7 @@ export async function putConfig(uuid: string, config: Partial<Record<ConfigKey, 
     config,
     updatedAt: new Date().toISOString()
   };
-  for (const target of targets()) await writeEntryTo(target, uuid, entry);
+  for (const target of targetsFor(uuid)) await writeEntryTo(target, uuid, entry);
   return { unchanged: false as const };
 }
 
@@ -323,7 +350,7 @@ export async function deleteEntry(uuid: string, token: string): Promise<{ ok: bo
   const entry = await readEntry(uuid);
   if (!entry) return { ok: true, authed: true };
   if (!tokensMatch(entry.tokenHash, token)) return { ok: false, authed: false };
-  for (const target of targets()) await removeEntryFrom(target, uuid);
+  for (const target of targetsFor(uuid)) await removeEntryFrom(target, uuid);
   return { ok: true, authed: true };
 }
 
@@ -361,9 +388,13 @@ export function readAllowed(ip: string): boolean {
 }
 
 export function clientIp(event: any): string {
-  const fwd = event.node.req.headers["x-forwarded-for"];
-  if (typeof fwd === "string" && fwd.length > 0) return fwd.split(",")[0].trim();
-  return event.node.req.socket?.remoteAddress || "unknown";
+  const fwd = getRequestHeader(event, "x-forwarded-for");
+  if (typeof fwd === "string" && fwd.length > 0) return fwd.split(",")[0]!.trim();
+  const cf = getRequestHeader(event, "cf-connecting-ip");
+  if (typeof cf === "string" && cf.length > 0) return cf.trim();
+  const ip = getRequestIP(event, { xForwardedFor: true });
+  if (ip) return ip;
+  return "unknown";
 }
 
 export function invalidUuidResponse(event: any) {

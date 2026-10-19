@@ -5,12 +5,54 @@ name: build app
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 jobs:
+  version:
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          full="${{ inputs.version }}"
+          full="${full#v}"
+          echo "tag=v$full" >> "$GITHUB_OUTPUT"
+
+      - name: make the tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.resolve.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$tag"
+          git push origin "$tag"
+
   build:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -52,8 +94,8 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.ref_type == 'tag'
-    needs: build
+    needs: [version, build]
+    if: needs.version.outputs.tag != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -116,6 +158,20 @@ jobs:
 
           out.append("## Docker\n\n```\ndocker pull ghcr.io/" + repo.lower() + ":latest\n```")
 
+          try:
+              import tomllib
+              with open("changelog.toml", "rb") as f:
+                  data = tomllib.load(f)
+              for date in sorted(data, reverse=True)[:1]:
+                  for block in data[date]:
+                      text = block.get("changelogtext", "").strip()
+                      if text:
+                          out.append("**" + date + "**\n\n" + text)
+          except FileNotFoundError:
+              print("no changelog.toml, publishing without one", file=sys.stderr)
+          except Exception as e:
+              print("could not read changelog.toml: " + str(e), file=sys.stderr)
+
           commits = []
           try:
               prev = subprocess.run(
@@ -140,9 +196,10 @@ jobs:
 
           out.append("## Recent Commits")
           out.extend("- " + c for c in commits)
-          print("\n".join(out))
+
+          print("\n\n".join(out))
           PY
-          python3 mkrel.py "${{ github.ref_name }}" > RELEASE_BODY.md
+          python3 mkrel.py "${{ needs.version.outputs.tag }}" > RELEASE_BODY.md
           rm -f mkrel.py
 
       - name: Attach to the release
@@ -150,7 +207,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          tag="${{ github.ref_name }}"
+          tag="${{ needs.version.outputs.tag }}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release edit "$tag" --notes-file RELEASE_BODY.md
             gh release upload "$tag" downloads/* --clobber

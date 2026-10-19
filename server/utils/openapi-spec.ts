@@ -30,6 +30,9 @@ paths:
                 uuid:
                   type: string
                   format: uuid
+                is_microsoft:
+                  type: boolean
+                  description: whatever the client tells this is a microsoft account or not
       responses:
         "201":
           description: registered
@@ -43,6 +46,13 @@ paths:
                     format: uuid
                   token:
                     type: string
+                  microsoft:
+                    type: boolean
+                  version:
+                    type: integer
+                    description: the API version, used by the mod to warn about version drift
+        "401":
+          description: cracked was rejected
         "429":
           description: too many registrations from this ip
   /v1/boobs:
@@ -239,6 +249,9 @@ paths:
                 properties:
                   ok:
                     type: boolean
+                  version:
+                    type: integer
+                    description: the API version
 components:
   securitySchemes:
     bearerAuth:

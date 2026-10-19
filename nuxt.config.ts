@@ -36,7 +36,8 @@ export default defineNuxtConfig({
   },
   vuetify: {
     moduleOptions: {
-      icons: { defaultSet: "mdi" }
+      icons: { defaultSet: "mdi" },
+      importComposables: ["useDate", "useLocale", "useDefaults", "useDisplay", "useRtl", "useTheme", "useGoTo", "useHotkey", "useMask"]
     },
     vuetifyOptions: {
       blueprint: md2,

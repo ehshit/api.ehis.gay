@@ -8,10 +8,16 @@ const DEFAULT_BRANDING_DESCRIPTION = "API for ehis.gay with stuff!";
 export interface AppConfig {
   branding: { name: string; description: string; serverUrl: string };
   http: { userAgent: string };
+  port: { port: string };
   storage: {
     driver: "" | "json" | "sqlite" | "postgres";
     path: string;
     databaseUrl: string;
+  };
+  boobs: {
+    requireMicrosoft: boolean;
+    separateOffline: boolean;
+    offlineDatabase: string;
   };
   configPath: string | null;
 }
@@ -31,6 +37,10 @@ server_url = ""
 # leave empty to fall back to branding.name
 user_agent = ""
 
+[port]
+# Sets the port to go to
+port = ""
+
 [storage]
 # leave driver empty ("") to use environment defaults
 # options: json | sqlite | postgres
@@ -41,6 +51,14 @@ driver = ""
 path = "data"
 # postgres connection (when driver is set to "postgres")
 database_url = ""
+
+[boobs]
+# Enforce players who connect to your API to have an valid Microsoft Account
+require_microsoft = false
+# Send offline (cracked) uuids to a separate database
+separate_offline = false
+# connection target for offline accounts, using the same format as [storage]
+offline_database = ""
 `;
 
 let cached: AppConfig | null = null;
@@ -49,7 +67,9 @@ function defaults(configPath: string | null): AppConfig {
   return {
     branding: { name: DEFAULT_BRANDING_NAME, description: DEFAULT_BRANDING_DESCRIPTION, serverUrl: "" },
     http: { userAgent: "" },
+    port: { port: "" },
     storage: { driver: "", path: "data", databaseUrl: "" },
+    boobs: { requireMicrosoft: false, separateOffline: false, offlineDatabase: "" },
     configPath
   };
 }
@@ -112,7 +132,9 @@ export function loadAppConfig(): AppConfig {
     const parsed = parseToml(readFileSync(file, "utf8")) as Record<string, any>;
     const branding = parsed.branding ?? {};
     const http = parsed.http ?? {};
+    const portSection = parsed.port ?? {};
     const storage = parsed.storage ?? {};
+    const boobs = parsed.boobs ?? {};
 
     const rawDriver = pickString(storage.driver, "").toLowerCase();
     const driver: AppConfig["storage"]["driver"] =
@@ -125,10 +147,16 @@ export function loadAppConfig(): AppConfig {
         serverUrl: pickString(branding.server_url, "")
       },
       http: { userAgent: pickString(http.user_agent, "") },
+      port: { port: pickString(portSection.port, "") },
       storage: {
         driver,
         path: pickString(storage.path, "data"),
         databaseUrl: pickString(storage.database_url, "")
+      },
+      boobs: {
+        requireMicrosoft: boobs.require_microsoft === true,
+        separateOffline: boobs.separate_offline === true,
+        offlineDatabase: pickString(boobs.offline_database, "")
       },
       configPath: file
     });
