@@ -12,6 +12,8 @@ tags:
     description: Look up a package in the Windows Package Manager manifest
   - name: meta
     description: service health
+  - name: legal
+    description: terms of service and privacy policy links shown by clients before opting in
 paths:
   /v1/boobs/register:
     post:
@@ -30,9 +32,6 @@ paths:
                 uuid:
                   type: string
                   format: uuid
-                is_microsoft:
-                  type: boolean
-                  description: whatever the client tells this is a microsoft account or not
       responses:
         "201":
           description: registered
@@ -51,6 +50,8 @@ paths:
                   version:
                     type: integer
                     description: the API version, used by the mod to warn about version drift
+                  legal:
+                    $ref: "#/components/schemas/LegalInfo"
         "401":
           description: cracked was rejected
         "429":
@@ -167,6 +168,21 @@ paths:
           description: missing or invalid parameters
         "429":
           description: too many requests
+  /v1/legal:
+    get:
+      tags: [legal]
+      summary: terms of service and privacy policy links
+      description: |
+        links a client (like the Over The Limits mod) should show before someone opts in.
+        only the configured values are returned, an empty object means this instance has none.
+      operationId: getLegal
+      responses:
+        "200":
+          description: configured legal links
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalInfo"
   /v1/winget:
     get:
       tags: [Windows Package Manager]
@@ -249,15 +265,32 @@ paths:
                 properties:
                   ok:
                     type: boolean
-                  version:
-                    type: integer
-                    description: the API version
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
   schemas:
+    LegalInfo:
+      type: object
+      description: every field is optional, only configured values are returned
+      properties:
+        tos_url:
+          type: string
+          format: uri
+          description: human-readable terms of service page
+        privacy_url:
+          type: string
+          format: uri
+          description: human-readable privacy policy page
+        tos_text_url:
+          type: string
+          format: uri
+          description: plain text (or text endpoint) version of the terms of service
+        privacy_text_url:
+          type: string
+          format: uri
+          description: plain text (or text endpoint) version of the privacy policy
     BoobsConfig:
       type: object
       properties:

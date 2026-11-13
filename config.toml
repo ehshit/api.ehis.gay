@@ -35,3 +35,13 @@ require_microsoft = false
 separate_offline = false
 # connection target for offline accounts, using the same format as [storage]
 offline_database = ""
+
+[legal]
+# Legal links handed to clients (like the Over The Limits mod) before they opt in.
+# Leave empty to disable the terms/privacy prompt entirely.
+# human-readable pages
+tos_url = "https://ehis.gay/legal/api/tos"
+privacy_url = "https://ehis.gay/legal/api/privacy"
+# plain text (or an endpoint returning text), used for showing it in-game
+tos_text_url = "https://ehis.gay/legal/api/tos.txt"
+privacy_text_url = "https://ehis.gay/legal/api/privacy.txt"

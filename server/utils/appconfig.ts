@@ -19,6 +19,12 @@ export interface AppConfig {
     separateOffline: boolean;
     offlineDatabase: string;
   };
+  legal: {
+    tosUrl: string;
+    privacyUrl: string;
+    tosTextUrl: string;
+    privacyTextUrl: string;
+  };
   configPath: string | null;
 }
 
@@ -59,6 +65,16 @@ require_microsoft = false
 separate_offline = false
 # connection target for offline accounts, using the same format as [storage]
 offline_database = ""
+
+[legal]
+# Legal links handed to clients (like the Over The Limits mod) before they opt in.
+# Leave empty to disable the terms/privacy prompt entirely.
+# human-readable pages
+tos_url = ""
+privacy_url = ""
+# plain text (or an endpoint returning text), used for showing it in-game
+tos_text_url = ""
+privacy_text_url = ""
 `;
 
 let cached: AppConfig | null = null;
@@ -70,12 +86,31 @@ function defaults(configPath: string | null): AppConfig {
     port: { port: "" },
     storage: { driver: "", path: "data", databaseUrl: "" },
     boobs: { requireMicrosoft: false, separateOffline: false, offlineDatabase: "" },
+    legal: { tosUrl: "", privacyUrl: "", tosTextUrl: "", privacyTextUrl: "" },
     configPath
   };
 }
 
 function pickString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function isHttpUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function pickLegalUrl(envKey: string, tomlValue: unknown): string {
+  const overridden = process.env[envKey]?.trim() ?? "";
+  if (overridden) return isHttpUrl(overridden) ? overridden : "";
+
+  const value = typeof tomlValue === "string" ? tomlValue.trim() : "";
+  return isHttpUrl(value) ? value : "";
 }
 
 function looksLikeNodeRuntime(): boolean {
@@ -135,6 +170,7 @@ export function loadAppConfig(): AppConfig {
     const portSection = parsed.port ?? {};
     const storage = parsed.storage ?? {};
     const boobs = parsed.boobs ?? {};
+    const legal = parsed.legal ?? {};
 
     const rawDriver = pickString(storage.driver, "").toLowerCase();
     const driver: AppConfig["storage"]["driver"] =
@@ -157,6 +193,12 @@ export function loadAppConfig(): AppConfig {
         requireMicrosoft: boobs.require_microsoft === true,
         separateOffline: boobs.separate_offline === true,
         offlineDatabase: pickString(boobs.offline_database, "")
+      },
+      legal: {
+        tosUrl: pickLegalUrl("LEGAL_TOS_URL", legal.tos_url),
+        privacyUrl: pickLegalUrl("LEGAL_PRIVACY_URL", legal.privacy_url),
+        tosTextUrl: pickLegalUrl("LEGAL_TOS_TEXT_URL", legal.tos_text_url),
+        privacyTextUrl: pickLegalUrl("LEGAL_PRIVACY_TEXT_URL", legal.privacy_text_url)
       },
       configPath: file
     });
@@ -212,6 +254,24 @@ export function applyStorageEnv(config: AppConfig = loadAppConfig()): void {
 
 export function getBranding() {
   return loadAppConfig().branding;
+}
+
+export function getLegal() {
+  return loadAppConfig().legal;
+}
+
+export function getLegalPayload(): Record<string, string> {
+  const legal = getLegal();
+  const payload: Record<string, string> = {};
+  if (legal.tosUrl) payload.tos_url = legal.tosUrl;
+  if (legal.privacyUrl) payload.privacy_url = legal.privacyUrl;
+  if (legal.tosTextUrl) payload.tos_text_url = legal.tosTextUrl;
+  if (legal.privacyTextUrl) payload.privacy_text_url = legal.privacyTextUrl;
+  return payload;
+}
+
+export function hasLegal(): boolean {
+  return Object.keys(getLegalPayload()).length > 0;
 }
 
 export function getUserAgent(): string {

@@ -21,5 +21,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const { token } = await registerUuid(uuid);
-  return { uuid, token, microsoft: !offline, version: API_VERSION };
+  const legal = getLegalPayload();
+  return {
+    uuid,
+    token,
+    microsoft: !offline,
+    version: API_VERSION,
+    ...(Object.keys(legal).length > 0 ? { legal } : {})
+  };
 });
