@@ -86,7 +86,12 @@ function defaults(configPath: string | null): AppConfig {
     port: { port: "" },
     storage: { driver: "", path: "data", databaseUrl: "" },
     boobs: { requireMicrosoft: false, separateOffline: false, offlineDatabase: "" },
-    legal: { tosUrl: "", privacyUrl: "", tosTextUrl: "", privacyTextUrl: "" },
+    legal: {
+      tosUrl: pickLegalUrl("LEGAL_TOS_URL", undefined),
+      privacyUrl: pickLegalUrl("LEGAL_PRIVACY_URL", undefined),
+      tosTextUrl: pickLegalUrl("LEGAL_TOS_TEXT_URL", undefined),
+      privacyTextUrl: pickLegalUrl("LEGAL_PRIVACY_TEXT_URL", undefined)
+    },
     configPath
   };
 }

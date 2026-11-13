@@ -32,6 +32,9 @@ paths:
                 uuid:
                   type: string
                   format: uuid
+                is_microsoft:
+                  type: boolean
+                  description: whatever the client tells this is a microsoft account or not
       responses:
         "201":
           description: registered
@@ -265,6 +268,9 @@ paths:
                 properties:
                   ok:
                     type: boolean
+                  version:
+                    type: integer
+                    description: the API version
 components:
   securitySchemes:
     bearerAuth:
