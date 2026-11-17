@@ -320,6 +320,9 @@ export function sanitizeConfig(input: unknown): Partial<Record<ConfigKey, number
 
 export async function registerUuid(uuid: string): Promise<{ token: string; entry: StoredEntry }> {
   const existing = await readEntry(uuid);
+  if (existing) {
+    throw createError({ statusCode: 409, statusMessage: "Conflict", message: "this UUID already exists" });
+  }
   const token = generateToken();
   const entry: StoredEntry = {
     tokenHash: sha256(token),

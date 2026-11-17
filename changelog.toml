@@ -1,3 +1,6 @@
+[[2026-11-17]]
+changelogtext = "Prevent registration to already registred UUIDs"
+
 [[2026-11-13]]
 changelogtext = "Legal links to stuff for opt-in services that can display them"
 

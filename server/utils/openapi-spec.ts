@@ -57,6 +57,8 @@ paths:
                     $ref: "#/components/schemas/LegalInfo"
         "401":
           description: cracked was rejected
+        "409":
+          description: this UUID already exists
         "429":
           description: too many registrations from this ip
   /v1/boobs:
