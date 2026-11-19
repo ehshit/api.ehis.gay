@@ -13,7 +13,7 @@ export const scalarConfig = {
   url: "/openapi.yml",
   hideClientButton: true,
   showDeveloperTools: "never",
-  hideTestRequestButton: true,
+  hideTestRequestButton: false,
   documentDownloadType: "none",
   hideDarkModeToggle: true,
   mcp: {

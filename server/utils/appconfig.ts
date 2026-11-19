@@ -25,6 +25,8 @@ export interface AppConfig {
     tosTextUrl: string;
     privacyTextUrl: string;
   };
+  donations: { url: string };
+  docs: { hideTestRequestButton: boolean };
   configPath: string | null;
 }
 
@@ -75,6 +77,14 @@ privacy_url = ""
 # plain text (or an endpoint returning text), used for showing it in-game
 tos_text_url = ""
 privacy_text_url = ""
+
+[donations]
+# Optional one-time donation link shown when the database runs out of quota
+url = ""
+
+[docs]
+# Hide the in-browser Test Request buttons in the Scalar docs
+hide_test_request_button = false
 `;
 
 let cached: AppConfig | null = null;
@@ -92,12 +102,21 @@ function defaults(configPath: string | null): AppConfig {
       tosTextUrl: pickLegalUrl("LEGAL_TOS_TEXT_URL", undefined),
       privacyTextUrl: pickLegalUrl("LEGAL_PRIVACY_TEXT_URL", undefined)
     },
+    donations: { url: pickLegalUrl("DONATION_URL", undefined) },
+    docs: { hideTestRequestButton: pickBool("DOCS_HIDE_TEST_REQUEST_BUTTON", undefined) },
     configPath
   };
 }
 
 function pickString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function pickBool(envKey: string, tomlValue: unknown): boolean {
+  const overridden = process.env[envKey]?.trim().toLowerCase();
+  if (overridden === "true") return true;
+  if (overridden === "false") return false;
+  return tomlValue === true;
 }
 
 function isHttpUrl(value: string): boolean {
@@ -176,6 +195,8 @@ export function loadAppConfig(): AppConfig {
     const storage = parsed.storage ?? {};
     const boobs = parsed.boobs ?? {};
     const legal = parsed.legal ?? {};
+    const donations = parsed.donations ?? {};
+    const docs = parsed.docs ?? {};
 
     const rawDriver = pickString(storage.driver, "").toLowerCase();
     const driver: AppConfig["storage"]["driver"] =
@@ -205,6 +226,8 @@ export function loadAppConfig(): AppConfig {
         tosTextUrl: pickLegalUrl("LEGAL_TOS_TEXT_URL", legal.tos_text_url),
         privacyTextUrl: pickLegalUrl("LEGAL_PRIVACY_TEXT_URL", legal.privacy_text_url)
       },
+      donations: { url: pickLegalUrl("DONATION_URL", donations.url) },
+      docs: { hideTestRequestButton: pickBool("DOCS_HIDE_TEST_REQUEST_BUTTON", docs.hide_test_request_button) },
       configPath: file
     });
   } catch (error) {
@@ -277,6 +300,15 @@ export function getLegalPayload(): Record<string, string> {
 
 export function hasLegal(): boolean {
   return Object.keys(getLegalPayload()).length > 0;
+}
+
+export function getDonationUrl(): string {
+  return loadAppConfig().donations.url;
+}
+
+export function getDonationPayload(): Record<string, string> {
+  const url = getDonationUrl();
+  return url ? { donation_url: url } : {};
 }
 
 export function getUserAgent(): string {

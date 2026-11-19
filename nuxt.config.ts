@@ -1,5 +1,6 @@
 import { md2 } from "vuetify/blueprints";
 import { scalarConfig } from "./scalar.config";
+import { loadAppConfig } from "./server/utils/appconfig";
 
 export default defineNuxtConfig({
   compatibilityDate: "2026-10-11",
@@ -69,7 +70,7 @@ export default defineNuxtConfig({
       }
     }
   },
-  scalar: scalarConfig,
+  scalar: { ...scalarConfig, hideTestRequestButton: loadAppConfig().docs.hideTestRequestButton },
   nitro: {
     preset: process.env.BUILD_EXE ? "bun" : process.env.NITRO_PRESET || "cloudflare_module",
     ...(process.env.BUILD_EXE

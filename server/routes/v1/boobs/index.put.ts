@@ -8,13 +8,19 @@ export default defineEventHandler(async (event) => {
   if (!isValidUuid(uuid)) throw invalidUuidResponse(event);
 
   const entry = await readEntry(uuid);
-  if (!entry || !tokensMatch(entry.tokenHash, token)) throw unauthorizedResponse();
+  if (!entry || !entryTokensMatch(entry, token)) throw unauthorizedResponse();
 
   const config = sanitizeConfig(body);
   if (Object.keys(config).length === 0) {
     throw createError({ statusCode: 400, statusMessage: "Bad Request", message: "no valid config fields" });
   }
 
-  const result = await putConfig(uuid, config);
+  let result: Awaited<ReturnType<typeof putConfig>>;
+  try {
+    result = await putConfig(uuid, config);
+  } catch (error) {
+    if (error instanceof DbProblem) return dbErrorResponse(event, error.kind);
+    throw error;
+  }
   return { uuid, hash: configHash(config), ...result };
 });

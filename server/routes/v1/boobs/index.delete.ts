@@ -9,7 +9,13 @@ export default defineEventHandler(async (event) => {
   if (!isValidUuid(uuid)) throw invalidUuidResponse(event);
   if (!token) throw unauthorizedResponse();
 
-  const result = await deleteEntry(uuid, token);
+  let result: Awaited<ReturnType<typeof deleteEntry>>;
+  try {
+    result = await deleteEntry(uuid, token);
+  } catch (error) {
+    if (error instanceof DbProblem) return dbErrorResponse(event, error.kind);
+    throw error;
+  }
   if (!result.authed) throw unauthorizedResponse();
 
   return { ok: true };

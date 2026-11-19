@@ -45,3 +45,11 @@ privacy_url = "https://ehis.gay/legal/api/privacy"
 # plain text (or an endpoint returning text), used for showing it in-game
 tos_text_url = "https://ehis.gay/legal/api/tos.txt"
 privacy_text_url = "https://ehis.gay/legal/api/privacy.txt"
+
+[donations]
+# Optional one-time donation link shown when the database runs out of quota
+url = ""
+
+[docs]
+# Hide the in-browser Test Request buttons in the Scalar docs
+hide_test_request_button = false

@@ -19,7 +19,7 @@ paths:
     post:
       tags: [boobs]
       summary: opt in to boob sync
-      description: registers your uuid and returns a token.
+      description: registers your uuid and returns a token
       operationId: registerBoobs
       requestBody:
         required: true
@@ -35,6 +35,9 @@ paths:
                 is_microsoft:
                   type: boolean
                   description: whatever the client tells this is a microsoft account or not
+                recover:
+                  type: boolean
+                  description: re-issue a token for an already registred uuid then keep the config and older tokens
       responses:
         "201":
           description: registered
@@ -58,9 +61,15 @@ paths:
         "401":
           description: cracked was rejected
         "409":
-          description: this UUID already exists
+          description: this UUID already exists (unless recover was set)
         "429":
           description: too many registrations from this ip
+        "503":
+          description: database exhausted or disk full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbError"
   /v1/boobs:
     get:
       tags: [boobs]
@@ -93,6 +102,12 @@ paths:
           description: no config stored for that uuid
         "429":
           description: too many requests
+        "503":
+          description: database exhausted or disk full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbError"
     put:
       tags: [boobs]
       summary: upload your own config
@@ -118,6 +133,12 @@ paths:
           description: stored
         "401":
           description: missing or invalid token
+        "503":
+          description: database exhausted or disk full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbError"
     delete:
       tags: [boobs]
       summary: opt out of boob sync
@@ -147,6 +168,12 @@ paths:
           description: missing or invalid uuid
         "401":
           description: missing or invalid token
+        "503":
+          description: database exhausted or disk full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbError"
   /v1/boobs/multiple:
     get:
       tags: [boobs]
@@ -173,6 +200,12 @@ paths:
           description: missing or invalid parameters
         "429":
           description: too many requests
+        "503":
+          description: database exhausted or disk full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbError"
   /v1/legal:
     get:
       tags: [legal]
@@ -299,6 +332,17 @@ components:
           type: string
           format: uri
           description: plain text (or text endpoint) version of the privacy policy
+    DbError:
+      type: object
+      description: database is out of quota or out of disk space
+      properties:
+        error:
+          type: string
+          enum: [DB_exhausted, DB_disk_full]
+        donation_url:
+          type: string
+          format: uri
+          description: optional one-time donation link set by the instance
     BoobsConfig:
       type: object
       properties:

@@ -22,5 +22,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Bad Request", message: "max 50 uuids per batch" });
   }
 
-  return await getManyConfigs(uuids);
+  try {
+    return await getManyConfigs(uuids);
+  } catch (error) {
+    if (error instanceof DbProblem) return dbErrorResponse(event, error.kind);
+    throw error;
+  }
 });

@@ -7,7 +7,13 @@ export default defineEventHandler(async (event) => {
 
   if (single !== undefined && batch === undefined) {
     if (!isValidUuid(single)) throw invalidUuidResponse(event);
-    const config = await getConfig(single);
+    let config: Awaited<ReturnType<typeof getConfig>>;
+    try {
+      config = await getConfig(single);
+    } catch (error) {
+      if (error instanceof DbProblem) return dbErrorResponse(event, error.kind);
+      throw error;
+    }
     if (!config) {
       throw createError({ statusCode: 404, statusMessage: "Not Found", message: "no config stored" });
     }
@@ -23,7 +29,12 @@ export default defineEventHandler(async (event) => {
     if (uuids.length > 50) {
       throw createError({ statusCode: 400, statusMessage: "Bad Request", message: "max 50 uuids per batch" });
     }
-    return await getManyConfigs(uuids);
+    try {
+      return await getManyConfigs(uuids);
+    } catch (error) {
+      if (error instanceof DbProblem) return dbErrorResponse(event, error.kind);
+      throw error;
+    }
   }
 
   throw createError({ statusCode: 400, statusMessage: "Bad Request", message: "provide ?uuid= or ?uuids=" });

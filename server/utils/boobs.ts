@@ -1,9 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, statfsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { resolveSqlBackend } from "./pgBackend";
-import { loadAppConfig } from "./appconfig";
+import { getDonationPayload, loadAppConfig } from "./appconfig";
 import { isOfflineUuid } from "./mojang";
 
 export const CONFIG_KEYS = [
@@ -21,12 +21,49 @@ export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 export interface StoredEntry {
   tokenHash: string;
+  extraTokenHashes?: string[];
   hash: string;
   config: Partial<Record<ConfigKey, number>>;
   updatedAt: string;
 }
 
 export type Store = Record<string, StoredEntry>;
+
+export type DbProblemKind = "exhausted" | "disk";
+
+export class DbProblem extends Error {
+  constructor(public readonly kind: DbProblemKind, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+function classifyDbError(error: unknown): DbProblem | null {
+  const detail = [
+    error instanceof Error ? error.message : "",
+    error instanceof Error ? (error as any).code : "",
+    error instanceof Error ? (error as any).name : ""
+  ].join(" ");
+  if (/ENOSPC|EDQUOT|SQLITE_FULL|SQLITE_IOERR|disk full|no space|out of disk/i.test(detail)) {
+    return new DbProblem("disk", error);
+  }
+  if (/exhausted|quota|size limit|HTTP status 402|HTTP status 423|HTTP status 429|payment required|plan limit|storage limit|resource limit/i.test(detail)) {
+    return new DbProblem("exhausted", error);
+  }
+  return null;
+}
+
+export function dbProblemPayload(kind: DbProblemKind) {
+  return {
+    error: kind === "disk" ? "DB_disk_full" : "DB_exhausted",
+    ...getDonationPayload()
+  };
+}
+
+export function dbErrorResponse(event: any, kind: DbProblemKind) {
+  setResponseStatus(event, 503);
+  setHeader(event, "content-type", "application/json");
+  return dbProblemPayload(kind);
+}
 
 interface Target {
   kind: "json" | "sqlite" | "postgres";
@@ -127,9 +164,27 @@ function openSqlite(path: string) {
   return db;
 }
 
+function decodeTokenHash(value: unknown): { tokenHash: string; extraTokenHashes?: string[] } {
+  if (typeof value === "string" && value.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((v) => typeof v === "string")) {
+        return { tokenHash: parsed[0], extraTokenHashes: parsed.slice(1) };
+      }
+    } catch {}
+  }
+  return { tokenHash: typeof value === "string" ? value : "" };
+}
+
+function encodeTokenHash(entry: StoredEntry): string {
+  const extras = entry.extraTokenHashes ?? [];
+  if (extras.length === 0) return entry.tokenHash;
+  return JSON.stringify([entry.tokenHash, ...extras]);
+}
+
 function toEntry(row: any): StoredEntry {
   return {
-    tokenHash: row.token_hash,
+    ...decodeTokenHash(row.token_hash),
     hash: row.hash,
     config: typeof row.config === "string" ? JSON.parse(row.config) : row.config,
     updatedAt: row.updated_at
@@ -155,7 +210,9 @@ async function readEntryFrom(target: Target, uuid: string): Promise<StoredEntry 
     if (!backend) return null;
     const row = await backend.get(uuid);
     return row ? toEntry(row) : null;
-  } catch {
+  } catch (error) {
+    const problem = classifyDbError(error);
+    if (problem) throw problem;
     return null;
   }
 }
@@ -182,7 +239,9 @@ async function readAllFrom(target: Target): Promise<Store> {
     const store: Store = {};
     for (const row of rows) store[row.uuid] = toEntry(row);
     return store;
-  } catch {
+  } catch (error) {
+    const problem = classifyDbError(error);
+    if (problem) throw problem;
     return {};
   }
 }
@@ -201,7 +260,7 @@ async function writeEntryTo(target: Target, uuid: string, entry: StoredEntry): P
       const db = openSqlite(target.path!);
       db.prepare(
         "INSERT INTO boobs (uuid, token_hash, hash, config, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(uuid) DO UPDATE SET token_hash=excluded.token_hash, hash=excluded.hash, config=excluded.config, updated_at=excluded.updated_at"
-      ).run(uuid, entry.tokenHash, entry.hash, JSON.stringify(entry.config), entry.updatedAt);
+      ).run(uuid, encodeTokenHash(entry), entry.hash, JSON.stringify(entry.config), entry.updatedAt);
       db.close();
       return;
     }
@@ -210,12 +269,15 @@ async function writeEntryTo(target: Target, uuid: string, entry: StoredEntry): P
     if (!backend) return;
     await backend.put({
       uuid,
-      token_hash: entry.tokenHash,
+      token_hash: encodeTokenHash(entry),
       hash: entry.hash,
       config: entry.config,
       updated_at: entry.updatedAt
     });
-  } catch {}
+  } catch (error) {
+    const problem = classifyDbError(error);
+    if (problem) throw problem;
+  }
 }
 
 async function removeEntryFrom(target: Target, uuid: string): Promise<void> {
@@ -239,25 +301,99 @@ async function removeEntryFrom(target: Target, uuid: string): Promise<void> {
     const backend = await resolveSqlBackend(target.url!);
     if (!backend) return;
     await backend.remove(uuid);
-  } catch {}
+  } catch (error) {
+    const problem = classifyDbError(error);
+    if (problem) throw problem;
+  }
+}
+
+const DISK_CHECK_TTL_MS = 60 * 1000;
+const DISK_MIN_AVAILABLE_BYTES = 64 * 1024 * 1024;
+let diskCheckedAt = 0;
+let diskLow = false;
+
+function checkDiskSpace(targets: Target[]): void {
+  const now = Date.now();
+  if (now - diskCheckedAt < DISK_CHECK_TTL_MS) {
+    if (diskLow) throw new DbProblem("disk", new Error("disk space low"));
+    return;
+  }
+  diskCheckedAt = now;
+  diskLow = false;
+  for (const target of targets) {
+    if (target.kind === "postgres") continue;
+    const path = target.kind === "sqlite" ? target.path! : target.path ? dirname(target.path!) : dataDir();
+    try {
+      const stats = statfsSync(path);
+      if (stats.bavail * stats.bsize < DISK_MIN_AVAILABLE_BYTES) diskLow = true;
+    } catch {}
+  }
+  if (diskLow) throw new DbProblem("disk", new Error("disk space low"));
+}
+
+function failedAll(problems: DbProblem[], count: number): DbProblem | null {
+  return count > 0 && problems.length === count ? problems[0]! : null;
+}
+
+async function writeAll(targets: Target[], uuid: string, entry: StoredEntry): Promise<void> {
+  const problems: DbProblem[] = [];
+  for (const target of targets) {
+    try {
+      await writeEntryTo(target, uuid, entry);
+    } catch (error) {
+      if (error instanceof DbProblem) problems.push(error);
+    }
+  }
+  const problem = failedAll(problems, targets.length);
+  if (problem) throw problem;
+}
+
+async function removeAll(targets: Target[], uuid: string): Promise<void> {
+  const problems: DbProblem[] = [];
+  for (const target of targets) {
+    try {
+      await removeEntryFrom(target, uuid);
+    } catch (error) {
+      if (error instanceof DbProblem) problems.push(error);
+    }
+  }
+  const problem = failedAll(problems, targets.length);
+  if (problem) throw problem;
 }
 
 export async function readEntry(uuid: string): Promise<StoredEntry | null> {
-  for (const target of targetsFor(uuid)) {
-    const entry = await readEntryFrom(target, uuid);
-    if (entry) return entry;
+  const targets = targetsFor(uuid);
+  checkDiskSpace(targets);
+  const problems: DbProblem[] = [];
+  for (const target of targets) {
+    try {
+      const entry = await readEntryFrom(target, uuid);
+      if (entry) return entry;
+    } catch (error) {
+      if (error instanceof DbProblem) problems.push(error);
+    }
   }
+  const problem = failedAll(problems, targets.length);
+  if (problem) throw problem;
   return null;
 }
 
 export async function readAll(): Promise<Store> {
+  const targets = [...mainTargets(), ...offlineTargets()];
   const merged: Store = {};
-  for (const target of [...mainTargets(), ...offlineTargets()]) {
-    const part = await readAllFrom(target);
-    for (const [uuid, entry] of Object.entries(part)) {
-      if (!(uuid in merged)) merged[uuid] = entry;
+  const problems: DbProblem[] = [];
+  for (const target of targets) {
+    try {
+      const part = await readAllFrom(target);
+      for (const [uuid, entry] of Object.entries(part)) {
+        if (!(uuid in merged)) merged[uuid] = entry;
+      }
+    } catch (error) {
+      if (error instanceof DbProblem) problems.push(error);
     }
   }
+  const problem = failedAll(problems, targets.length);
+  if (problem) throw problem;
   return merged;
 }
 
@@ -307,6 +443,16 @@ export function tokensMatch(storedHash: string, provided: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+const MAX_EXTRA_TOKENS = 8;
+
+export function entryTokensMatch(entry: StoredEntry, provided: string): boolean {
+  let matched = false;
+  for (const hash of [entry.tokenHash, ...(entry.extraTokenHashes ?? [])]) {
+    matched = tokensMatch(hash, provided) || matched;
+  }
+  return matched;
+}
+
 export function sanitizeConfig(input: unknown): Partial<Record<ConfigKey, number>> {
   const out: Partial<Record<ConfigKey, number>> = {};
   if (!input || typeof input !== "object") return out;
@@ -318,19 +464,23 @@ export function sanitizeConfig(input: unknown): Partial<Record<ConfigKey, number
   return out;
 }
 
-export async function registerUuid(uuid: string): Promise<{ token: string; entry: StoredEntry }> {
+export async function registerUuid(uuid: string, recover = false): Promise<{ token: string; entry: StoredEntry }> {
   const existing = await readEntry(uuid);
-  if (existing) {
+  if (existing && !recover) {
     throw createError({ statusCode: 409, statusMessage: "Conflict", message: "this UUID already exists" });
   }
   const token = generateToken();
+  const extraTokenHashes = existing
+    ? [existing.tokenHash, ...(existing.extraTokenHashes ?? [])].slice(0, MAX_EXTRA_TOKENS)
+    : [];
   const entry: StoredEntry = {
     tokenHash: sha256(token),
-    hash: configHash(existing?.config ?? {}),
+    extraTokenHashes,
+    hash: existing?.hash ?? configHash({}),
     config: existing?.config ?? {},
     updatedAt: new Date().toISOString()
   };
-  for (const target of targetsFor(uuid)) await writeEntryTo(target, uuid, entry);
+  await writeAll(targetsFor(uuid), uuid, entry);
   return { token, entry };
 }
 
@@ -341,19 +491,20 @@ export async function putConfig(uuid: string, config: Partial<Record<ConfigKey, 
 
   const entry: StoredEntry = {
     tokenHash: existing?.tokenHash ?? "",
+    extraTokenHashes: existing?.extraTokenHashes ?? [],
     hash,
     config,
     updatedAt: new Date().toISOString()
   };
-  for (const target of targetsFor(uuid)) await writeEntryTo(target, uuid, entry);
+  await writeAll(targetsFor(uuid), uuid, entry);
   return { unchanged: false as const };
 }
 
 export async function deleteEntry(uuid: string, token: string): Promise<{ ok: boolean; authed: boolean }> {
   const entry = await readEntry(uuid);
   if (!entry) return { ok: true, authed: true };
-  if (!tokensMatch(entry.tokenHash, token)) return { ok: false, authed: false };
-  for (const target of targetsFor(uuid)) await removeEntryFrom(target, uuid);
+  if (!entryTokensMatch(entry, token)) return { ok: false, authed: false };
+  await removeAll(targetsFor(uuid), uuid);
   return { ok: true, authed: true };
 }
 

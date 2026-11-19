@@ -1,3 +1,9 @@
+[[2026-11-19]]
+changelogtext = """
+- Added recover flag so restore config gets a new token without invalidating other instances
+- Added DB exhausted and disk full JSON errors with an optional donation link
+"""
+
 [[2026-11-17]]
 changelogtext = "Prevent registration to already registred UUIDs"
 
