@@ -19,6 +19,8 @@ export interface SqlBackend {
   remove(uuid: string): Promise<void>;
 }
 
+const CREATE_TABLE = "CREATE TABLE IF NOT EXISTS boobs (uuid TEXT PRIMARY KEY, token_hash TEXT NOT NULL, hash TEXT NOT NULL, config JSONB NOT NULL, updated_at TEXT NOT NULL)";
+
 type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
 
 function httpCandidates(): string[] {
@@ -103,7 +105,7 @@ class HttpBackend implements SqlBackend {
 
   private async init(): Promise<void> {
     if (!this.ready) {
-      this.ready = this.tag`CREATE TABLE IF NOT EXISTS boobs (uuid TEXT PRIMARY KEY, token_hash TEXT NOT NULL, hash TEXT NOT NULL, config JSONB NOT NULL, updated_at TEXT NOT NULL)`.then(
+      this.ready = this.tag`${CREATE_TABLE}`.then(
         () => undefined
       );
     }
@@ -133,10 +135,11 @@ class HttpBackend implements SqlBackend {
   }
 }
 
-const backends = new Map<string, SqlBackend | null>();
+const backends = new Map<string, SqlBackend>();
 
-export async function resolveSqlBackend(url: string): Promise<SqlBackend | null> {
-  if (backends.has(url)) return backends.get(url) ?? null;
+export async function resolveSqlBackend(url: string): Promise<SqlBackend> {
+  const cached = backends.get(url);
+  if (cached) return cached;
 
   try {
     const backend = new PgBackend(url);
@@ -165,6 +168,5 @@ export async function resolveSqlBackend(url: string): Promise<SqlBackend | null>
   } catch {
   }
 
-  backends.set(url, null);
-  return null;
+  throw new Error("no postgres backend available");
 }

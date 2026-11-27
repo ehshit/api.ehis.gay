@@ -334,11 +334,11 @@ components:
           description: plain text (or text endpoint) version of the privacy policy
     DbError:
       type: object
-      description: database is out of quota or out of disk space
+      description: database is unavailable, out of quota, or out of disk space
       properties:
         error:
           type: string
-          enum: [DB_exhausted, DB_disk_full]
+          enum: [DB_exhausted, DB_disk_full, DB_unavailable]
         donation_url:
           type: string
           format: uri

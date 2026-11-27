@@ -1,3 +1,9 @@
+[[2026-11-27]]
+changelogtext = """
+- Dead databases now return DB_unavailable instead of reporting no stored config
+- Fixed postgres CREATE_TABLE being undefined
+"""
+
 [[2026-11-19]]
 changelogtext = """
 - Added recover flag so restore config gets a new token without invalidating other instances

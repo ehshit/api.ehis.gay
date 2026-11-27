@@ -7,7 +7,13 @@ export default defineEventHandler(async (event) => {
 
   if (!isValidUuid(uuid)) throw invalidUuidResponse(event);
 
-  const entry = await readEntry(uuid);
+  let entry: Awaited<ReturnType<typeof readEntry>>;
+  try {
+    entry = await readEntry(uuid);
+  } catch (error) {
+    if (error instanceof DbProblem) return dbErrorResponse(event, error.kind);
+    throw error;
+  }
   if (!entry || !entryTokensMatch(entry, token)) throw unauthorizedResponse();
 
   const config = sanitizeConfig(body);

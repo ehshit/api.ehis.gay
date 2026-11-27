@@ -29,33 +29,50 @@ export interface StoredEntry {
 
 export type Store = Record<string, StoredEntry>;
 
-export type DbProblemKind = "exhausted" | "disk";
+export type DbProblemKind = "exhausted" | "disk" | "unavailable";
 
 export class DbProblem extends Error {
   constructor(public readonly kind: DbProblemKind, cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause));
+    super(
+      cause instanceof Error
+        ? cause.message
+        : typeof (cause as any)?.message === "string"
+          ? (cause as any).message
+          : String(cause)
+    );
   }
 }
 
-function classifyDbError(error: unknown): DbProblem | null {
+function classifyDbError(error: unknown): DbProblem {
   const detail = [
-    error instanceof Error ? error.message : "",
-    error instanceof Error ? (error as any).code : "",
-    error instanceof Error ? (error as any).name : ""
-  ].join(" ");
+    error instanceof Error ? error.message : (error as any)?.message,
+    (error as any)?.code,
+    (error as any)?.name,
+    (error as any)?.status,
+    (error as any)?.statusCode
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .map(String)
+    .join(" ");
   if (/ENOSPC|EDQUOT|SQLITE_FULL|SQLITE_IOERR|disk full|no space|out of disk/i.test(detail)) {
     return new DbProblem("disk", error);
   }
   if (/exhausted|quota|size limit|HTTP status 402|HTTP status 423|HTTP status 429|payment required|plan limit|storage limit|resource limit/i.test(detail)) {
     return new DbProblem("exhausted", error);
   }
-  return null;
+  return new DbProblem("unavailable", error);
 }
+
+const DB_ERROR_CODES: Record<DbProblemKind, string> = {
+  disk: "DB_disk_full",
+  exhausted: "DB_exhausted",
+  unavailable: "DB_unavailable"
+};
 
 export function dbProblemPayload(kind: DbProblemKind) {
   return {
-    error: kind === "disk" ? "DB_disk_full" : "DB_exhausted",
-    ...getDonationPayload()
+    error: DB_ERROR_CODES[kind],
+    ...(kind === "unavailable" ? {} : getDonationPayload())
   };
 }
 
@@ -207,13 +224,10 @@ async function readEntryFrom(target: Target, uuid: string): Promise<StoredEntry 
     }
 
     const backend = await resolveSqlBackend(target.url!);
-    if (!backend) return null;
     const row = await backend.get(uuid);
     return row ? toEntry(row) : null;
   } catch (error) {
-    const problem = classifyDbError(error);
-    if (problem) throw problem;
-    return null;
+    throw classifyDbError(error);
   }
 }
 
@@ -234,15 +248,12 @@ async function readAllFrom(target: Target): Promise<Store> {
     }
 
     const backend = await resolveSqlBackend(target.url!);
-    if (!backend) return {};
     const rows = await backend.all();
     const store: Store = {};
     for (const row of rows) store[row.uuid] = toEntry(row);
     return store;
   } catch (error) {
-    const problem = classifyDbError(error);
-    if (problem) throw problem;
-    return {};
+    throw classifyDbError(error);
   }
 }
 
@@ -266,7 +277,6 @@ async function writeEntryTo(target: Target, uuid: string, entry: StoredEntry): P
     }
 
     const backend = await resolveSqlBackend(target.url!);
-    if (!backend) return;
     await backend.put({
       uuid,
       token_hash: encodeTokenHash(entry),
@@ -275,8 +285,7 @@ async function writeEntryTo(target: Target, uuid: string, entry: StoredEntry): P
       updated_at: entry.updatedAt
     });
   } catch (error) {
-    const problem = classifyDbError(error);
-    if (problem) throw problem;
+    throw classifyDbError(error);
   }
 }
 
@@ -299,11 +308,9 @@ async function removeEntryFrom(target: Target, uuid: string): Promise<void> {
     }
 
     const backend = await resolveSqlBackend(target.url!);
-    if (!backend) return;
     await backend.remove(uuid);
   } catch (error) {
-    const problem = classifyDbError(error);
-    if (problem) throw problem;
+    throw classifyDbError(error);
   }
 }
 
@@ -370,11 +377,10 @@ export async function readEntry(uuid: string): Promise<StoredEntry | null> {
       const entry = await readEntryFrom(target, uuid);
       if (entry) return entry;
     } catch (error) {
-      if (error instanceof DbProblem) problems.push(error);
+      problems.push(error instanceof DbProblem ? error : classifyDbError(error));
     }
   }
-  const problem = failedAll(problems, targets.length);
-  if (problem) throw problem;
+  if (problems.length > 0) throw problems[0]!;
   return null;
 }
 
